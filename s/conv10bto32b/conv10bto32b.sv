@@ -28,6 +28,19 @@
 `include "common_defs.vh"
 `include "macros.vh"
 
+//
+//
+//
+//                          +----+
+//                          |    |
+//                          |    |
+//                     10b  |    |   32b
+//               -----/-----|    |===/=====
+//                          |    |
+//                          |    |
+//                          |    |
+//                          +----+
+
 module conv10bto32b (
 // -------------------------------------------------------------------------- //
 // Input
@@ -51,7 +64,10 @@ module conv10bto32b (
 //                                                                            //
 // ========================================================================== //
 
+`ifdef HAS_ENABLE
 logic                                   upt_en;
+`endif
+logic [31:0]                            out;
 
 // ========================================================================== //
 //                                                                            //
@@ -59,8 +75,13 @@ logic                                   upt_en;
 //                                                                            //
 // ========================================================================== //
 
-`P_DFFE(clk, 41, align, upt_en);
-`P_DFFRE(clk, 6, cnt, upt_en, 'b0);
+`ifdef HAS_ENABLE
+  `P_DFFE(clk, 41, align, upt_en);
+  `P_DFFRE(clk, 6, cnt, upt_en, 'b0);
+`else
+  `P_DFF(clk, 41, align);
+  `P_DFFR(clk, 6, cnt, 'b0);
+`endif
 
 // ========================================================================== //
 //                                                                            //
@@ -68,16 +89,42 @@ logic                                   upt_en;
 //                                                                            //
 // ========================================================================== //
 
+// Algorithm:
+//
+//   Init:
+//
+//     cnt_r <- 0;
+//     align_r <- 0;
+//     o_vld <- 0;
+//     o_dat <- 0;
+//
+//   On Clock:
+//
+//     if (cnt_r >= 32) {
+//       o_vld <- 'b1;
+//       o_dat <- align_r >> cnt_r [3:0];
+//       cnt_r <- cnt_r - 32;
+//     } else {
+//       o_vld <- 'b0;
+//     }
+//     if (i_vld) {
+//       align_r <- {align_r, i_dat};
+//       cnt_r <- cnt_r + 10;
+//     }
+
+`ifdef HAS_ENABLE
 assign upt_en = (i_vld | o_vld);
+`endif
 
 assign cnt_w =
-    // Subtract 32.
-    (o_vld ? (cnt_r & 6'b01_1111) : cnt_r) +  // (1)
-    // Add 10
-    (i_vld ? 'd10 : '0);                      // (2)
+    //
+    (o_vld ? {1'b0, cnt_r [4:0]} : cnt_r) +
+    //
+    (i_vld ? 'd10 : '0);
 
-assign align_initial = o_vld ? { 'b0, align_r [40:32] } : align_r;
-assign align_w = i_vld ? {align_initial [30:10], i_dat} : align_initial;
+assign align_w = i_vld ? {align_r [30:10], i_dat} : align_r;
+
+assign out = (align_r >> cnt_r [3:0]);
 
 // ========================================================================== //
 //                                                                            //
@@ -86,7 +133,7 @@ assign align_w = i_vld ? {align_initial [30:10], i_dat} : align_initial;
 // ========================================================================== //
 
 assign o_vld = cnt_r [5];
-assign o_dat = align_r [31:0];
+assign o_dat = dat;
 
 endmodule // conv10bto32b
 
